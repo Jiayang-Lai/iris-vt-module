@@ -275,3 +275,52 @@ class VtHandler(object):
             self.log.info('Skipped adding attribute report. Option disabled')
 
         return InterfaceStatus.I2Success("Successfully processed hash")
+    
+    def handle_vt_filename_hash(self, ioc):
+        """
+        Handles the IOC of type filename|hash and adds VT insights
+
+        :param ioc: IOC instance
+        :return: IIStatus
+        """
+        vt = self.get_vt_instance()
+
+        filename_hash_splitted = ioc.ioc_value.split("|")
+        hash_value = filename_hash_splitted[-1]
+
+        self.log.info(f'Getting hash report for {hash_value}')
+        report = vt.get_file_report(hash_value)
+
+        status = self._validate_report(report)
+        if not status: return status
+
+        report = status.get_data()
+        results = report.get('results')
+
+        self.tag_if_malicious_or_suspicious(context=results, ioc=ioc)
+
+        if self.mod_config.get('vt_report_as_attribute') is True:
+            self.log.info('Generating report from template')
+            status = gen_hash_report_from_template(html_template=self.mod_config.get('vt_hash_report_template'),
+                                                   vt_report=report)
+
+            if not status.is_success():
+                return status
+
+            rendered_report = status.get_data()
+
+            try:
+                self.log.info('Adding new attribute VT hash Report to IOC')
+                add_tab_attribute_field(ioc, tab_name='VT Report', field_name="HTML report", field_type="html",
+                                        field_value=rendered_report)
+                self.log.info('Done')
+
+            except Exception:
+                print(traceback.format_exc())
+                self.log.error(traceback.format_exc())
+                return InterfaceStatus.I2Error(traceback.format_exc())
+        else:
+            self.log.info('Skipped adding attribute report. Option disabled')
+
+        return InterfaceStatus.I2Success("Successfully processed hash")
+
